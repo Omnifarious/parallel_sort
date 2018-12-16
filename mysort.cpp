@@ -4,11 +4,12 @@
 #include <deque>
 #include <random>
 #include <utility>
+#include <memory>
 #include <cstdint>
 //#include <fstream>
 
-using vecsize_t = ::std::vector<::std::uint32_t>::size_type;
-using veciter_t = ::std::vector<::std::uint32_t>::iterator;
+using vecsize_t = ::std::uint64_t;
+using veciter_t = ::std::uint32_t *;
 
 void gen_and_sort_section(const veciter_t &begin, const veciter_t &end, int seed)
 {
@@ -58,22 +59,25 @@ struct sort_thread {
 
 int main()
 {
-   using ::std::vector;
    using ::std::thread;
+   using ::std::unique_ptr;
+   using ::std::make_unique;
+   using ::std::uint32_t;
 
    constexpr auto size = 1ULL << 31;
-   ::std::vector<::std::uint32_t> huge_array(size);
+   auto huge_array = make_unique<uint32_t[]>(size);
    const int cpucount = ::std::max(thread::hardware_concurrency() / 2, 1U);
    const int sections = cpucount;
-   vector<decltype(huge_array.begin())> partitions(sections + 1);
+   const int secmarkers = sections + 1;
+   auto partitions = make_unique<veciter_t[]>(secmarkers);
 
-   partitions[0] = huge_array.begin();
-   for (unsigned int i = 1; i < partitions.size(); ++i) {
+   partitions[0] = &(huge_array[0]);
+   for (int i = 1; i < secmarkers; ++i) {
       auto const prev_part = partitions[i - 1];
-      auto const remaining = partitions.size() - i;
-      partitions[i] = prev_part + (huge_array.end() - prev_part) / remaining;
+      auto const remaining = secmarkers - i;
+      partitions[i] = prev_part + (&(huge_array[size]) - prev_part) / remaining;
    }
-   if (partitions[partitions.size() - 1] != huge_array.end()) {
+   if (partitions[secmarkers - 1] != &(huge_array[size])) {
       return 1;
    }
 
