@@ -1,3 +1,7 @@
+// Copyright 2018 by Eric Hopper
+// This program is distributed under the terms of the GPLv3 or later, see
+// LICENSE for more details.
+
 #include <thread>
 #include <algorithm>
 #include <vector>
