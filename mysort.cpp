@@ -10,14 +10,18 @@
 #include <utility>
 #include <memory>
 #include <cstdint>
+#include <execution>
+#include <fmt/core.h>
 //#include <fstream>
 
 using vecsize_t = ::std::uint64_t;
 using veciter_t = ::std::uint32_t *;
+using seed_t = ::std::random_device::result_type;
 
-void gen_and_sort_section(const veciter_t &begin, const veciter_t &end, int seed)
+void gen_and_sort_section(const veciter_t &begin, const veciter_t &end,
+                          seed_t seed)
 {
-   ::std::minstd_rand randgen(seed);
+   ::std::mt19937_64 randgen(seed);
    ::std::generate(begin, end, randgen);
    ::std::sort(begin, end);
 }
@@ -61,6 +65,70 @@ struct sort_thread {
    }
 };
 
+
+class mygen {
+   using rand_t = ::std::mt19937_64;
+   using randdev_t = ::std::random_device;
+   using randresult_t = rand_t::result_type;
+
+   rand_t gen_;
+
+ public:
+   mygen() : gen_(randdev_t{}()) {}
+   mygen(mygen const &) : mygen() {}
+   mygen(mygen &&) = delete;
+
+   auto operator ()() { return gen_(); }
+};
+
+
+constexpr auto sort_size = 1ULL << 31;
+
+
+#if defined(EXEC_POLICY)
+
+int main()
+{
+   using ::std::unique_ptr;
+   using ::std::make_unique;
+   auto huge_array = make_unique<uint32_t[]>(sort_size);
+   auto const huge_begin = &(huge_array[0]);
+   auto const huge_end = &(huge_array[sort_size]);
+   namespace execp = ::std::execution;
+
+   fmt::print("Generating.\n");
+   ::std::generate(execp::par_unseq, huge_begin, huge_end, mygen{});
+   fmt::print("Sorting.\n");
+   ::std::sort(execp::par_unseq, huge_begin, huge_end);
+   fmt::print("Verifying.\n");
+   if (::std::all_of(execp::par_unseq, huge_begin + 1, huge_end, [](auto const &b) { auto bp = &b; return *(bp - 1) <= *bp; }))
+   {
+      fmt::print("Sorted.\n");
+   } else {
+      fmt::print("Not sorted.\n");
+   }
+   return 0;
+}
+
+
+#elif defined(SINGLE)
+
+int main()
+{
+   using ::std::unique_ptr;
+   using ::std::make_unique;
+   auto huge_array = make_unique<uint32_t[]>(sort_size);
+   auto const huge_begin = &(huge_array[0]);
+   auto const huge_end = &(huge_array[sort_size]);
+
+   fmt::print("Generating.\n");
+   ::std::generate(huge_begin, huge_end, mygen{});
+   fmt::print("Sorting.\n");
+   ::std::sort(huge_begin, huge_end);
+   return 0;
+}
+
+#else
 int main()
 {
    using ::std::thread;
@@ -68,8 +136,7 @@ int main()
    using ::std::make_unique;
    using ::std::uint32_t;
 
-   constexpr auto size = 1ULL << 31;
-   auto huge_array = make_unique<uint32_t[]>(size);
+   auto huge_array = make_unique<uint32_t[]>(sort_size);
    const int cpucount = ::std::max(thread::hardware_concurrency() / 2, 1U);
    const int sections = cpucount;
    const int secmarkers = sections + 1;
@@ -79,9 +146,9 @@ int main()
    for (int i = 1; i < secmarkers; ++i) {
       auto const prev_part = partitions[i - 1];
       auto const remaining = secmarkers - i;
-      partitions[i] = prev_part + (&(huge_array[size]) - prev_part) / remaining;
+      partitions[i] = prev_part + (&(huge_array[sort_size]) - prev_part) / remaining;
    }
-   if (partitions[secmarkers - 1] != &(huge_array[size])) {
+   if (partitions[secmarkers - 1] != &(huge_array[sort_size])) {
       return 1;
    }
 
@@ -139,3 +206,4 @@ int main()
    */
    return 0;
 }
+#endif
